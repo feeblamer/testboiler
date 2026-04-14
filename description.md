@@ -1,180 +1,109 @@
-## QUICKBOILER — Бойлерплейт для мгновенного тестирования любой Python‑библиотеки  
+## TESTBOILER — MVP бойлерплейта для быстрого тестирования Python-библиотек
 
-### 1️⃣ Структура готового проекта  
+### 1. Что уже реализовано
 
-```
+`testboiler` — это CLI-пакет, который помогает быстро подготовить каталог для проверки сторонней Python-библиотеки.
+
+В текущем MVP есть:
+- шаблон проекта с `pytest` и `unittest`;
+- конфиг `quickboiler.cfg`;
+- локальный `.venv` для запуска тестов;
+- CLI-команды `init`, `install`, `run`, `venv`.
+
+### 2. Структура шаблона
+
+```text
 my_project/
-├─ src/                       # место для кода (можно оставить пустым)
 ├─ tests/
 │  ├─ pytest/
-│  │   └─ test_example.py     # шаблонный pytest‑тест
+│  │   └─ test_1.py
 │  └─ unittest/
-│      └─ test_example.py     # шаблонный unittest‑тест
-├─ .venv/                     # (опционально) локальное virtualenv
-├─ requirements.txt           # будет заполнен автоматически
-├─ quickboiler.cfg            # конфиг проекта
-├─ sitecustomize.py           # авто‑установка зависимости
-└─ quickboiler/               # исполняемый пакет CLI
-   ├─ __init__.py
-   └─ __main__.py             # entry‑point: quickboiler <command>
+│      └─ test_1.py
+├─ requirements.txt
+└─ quickboiler.cfg
 ```
 
-### 2️⃣ Файл `quickboiler.cfg` (YAML)
+Шаблонные тесты не содержат кода под конкретную библиотеку. Это заготовки, в которые пользователь добавляет свои проверки.
+
+### 3. Конфиг `quickboiler.cfg`
 
 ```yaml
-# Укажите библиотеку, которую нужно тестировать
-library: requests==2.31.0
+# Укажите библиотеку, которую хотите тестировать.
+# Это шаблон: замените значение ниже на реальный пакет.
+library: <lib==2.0.1>
 
-# Какие наборы тестов включать (можно отключить один из блоков)
 framework:
   pytest: true
   unittest: true
 ```
 
-*Если версия не важна – просто `library: requests`.*
+Правила:
+- `library` можно задать как реальный пакет или как `None`, если тестируются только встроенные модули Python;
+- если указан реальный пакет, он устанавливается в локальный `.venv` проекта;
+- если `pytest: true`, запускается `pytest tests/pytest`;
+- если `unittest: true`, запускается `python -m unittest discover -s tests/unittest`;
+- хотя бы один раннер должен быть включён.
 
-### 3️⃣ Авто‑установка зависимости – `sitecustomize.py`
+### 4. Локальное окружение проекта
 
-```python
-import importlib, subprocess, sys, os, yaml
+`testboiler install` и `testboiler run` работают через `.venv` внутри boilerplate-проекта.
 
-cfg_path = os.path.join(os.path.dirname(__file__), "quickboiler.cfg")
-if os.path.exists(cfg_path):
-    with open(cfg_path, "r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+Команда `testboiler install`:
+- создаёт `.venv`, если его ещё нет;
+- устанавливает зависимости из `requirements.txt` именно в `.venv`;
+- устанавливает зависимость из `quickboiler.cfg` тоже в `.venv`, если `library` задана.
 
-    lib = cfg.get("library")
-    if lib:
-        pkg_name = lib.split("==")[0]          # имя без версии
-        try:
-            importlib.import_module(pkg_name)
-        except ImportError:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", lib])
+Команда `testboiler run`:
+- использует уже существующий `.venv`;
+- не выполняет установку пакетов повторно;
+- запускает тесты через Python из `.venv`.
+
+Это позволяет запускать `testboiler` из `pipx`, не засоряя окружение самого CLI.
+
+### 5. Команды CLI
+
+После `pip install -e .` доступны:
+
+- `testboiler init` — копирует шаблон в текущий пустой каталог;
+- `testboiler init <dir>` — создаёт новую папку и разворачивает шаблон в ней;
+- `testboiler install` — создаёт/использует локальный `.venv` и ставит туда зависимости из `requirements.txt` и `quickboiler.cfg`;
+- `testboiler run` — использует локальный `.venv` и запускает только те тестовые наборы, которые включены в конфиге;
+- `testboiler venv` — создаёт `.venv`.
+
+Также доступен запуск через:
+
+```bash
+python -m testboiler
 ```
 
-*Python ищет `sitecustomize.py` автоматически при старте интерпретатора, поэтому любой импорт в тестах сначала выполнит проверку и, при необходимости, установит требуемый пакет.*
+### 6. Минимальный рабочий сценарий
 
-### 4️⃣ Шаблонные тесты  
-
-**pytest (`tests/pytest/test_example.py`)**  
-
-```python
-def test_import():
-    import requests          # проверка, что библиотека импортируется
-    assert requests.__name__ == "requests"
+```bash
+python -m pip install -e .
+testboiler init my_project
+cd my_project
 ```
 
-**unittest (`tests/unittest/test_example.py`)**  
+Дальше:
+1. Открыть `quickboiler.cfg` и указать реальную библиотеку.
+2. Указать нужные зависимости в `requirements.txt`.
 
-```python
-import unittest
-
-class TestImport(unittest.TestCase):
-    def test_import(self):
-        import requests
-        self.assertEqual(requests.__name__, "requests")
-
-if __name__ == "__main__":
-    unittest.main()
+```bash
+echo "pytest" >> requirements.txt
 ```
 
-Можно добавить свои тесты рядом с этими шаблонами – они будут автоматически обнаружены.
+3. Добавить свои тесты в `tests/pytest/` или `tests/unittest/`.
+4. Выполнить:
 
-### 5️⃣ CLI‑утилита `quickboiler`  
-
-`quickboiler` — пакет, установленный в окружении (`pip install -e .` из корня проекта). Основные команды:
-
-| Команда | Описание |
-|--------|----------|
-| `quickboiler init` | Копирует шаблонную структуру в текущий каталог (если ещё нет). |
-| `quickboiler run` | Запускает **оба** набора тестов: `pytest tests/pytest` и `python -m unittest discover -s tests/unittest`. |
-| `quickboiler venv` | Создаёт локальное виртуальное окружение `.venv` и выводит инструкцию по активации. |
-| `quickboiler dockerize` | Генерирует `Dockerfile` и `docker-compose.yml` для изолированного CI‑контейнера. |
-
-#### Минимальная реализация `quickboiler/__main__.py`
-
-```python
-import argparse, subprocess, sys, os, shutil
-
-def copy_template(dst):
-    src = os.path.join(os.path.dirname(__file__), "..", "quickboiler_template")
-    shutil.copytree(src, dst, dirs_exist_ok=True)
-
-def run_pytest():
-    subprocess.check_call([sys.executable, "-m", "pytest", "tests/pytest"])
-
-def run_unittest():
-    subprocess.check_call([sys.executable, "-m", "unittest", "discover", "-s", "tests/unittest"])
-
-def main():
-    parser = argparse.ArgumentParser(prog="quickboiler")
-    sub = parser.add_subparsers(dest="cmd")
-    sub.add_parser("init")
-    sub.add_parser("run")
-    sub.add_parser("venv")
-    args = parser.parse_args()
-
-    if args.cmd == "init":
-        copy_template(os.getcwd())
-    elif args.cmd == "run":
-        run_pytest()
-        run_unittest()
-    elif args.cmd == "venv":
-        subprocess.check_call([sys.executable, "-m", "venv", ".venv"])
-        print("Виртуальное окружение создано в .venv. Активировать:\n  source .venv/bin/activate")
-    else:
-        parser.print_help()
-
-if __name__ == "__main__":
-    main()
+```bash
+testboiler install
+testboiler run
 ```
 
-> **Примечание:** при упаковке проекта добавить в `setup.cfg`/`pyproject.toml` entry‑point `console_scripts = ["quickboiler=quickboiler.__main__:main"]`.
+### 7. Границы текущего MVP
 
-### 6️⃣ Быстрый старт (полный цикл)
-
-1. **Инициализация**  
-
-   ```bash
-   mkdir my_project && cd my_project
-   python -m quickboiler init      # скопирует шаблон
-   ```
-
-2. **Настройка библиотеки**  
-
-   Откройте `quickboiler.cfg` и укажите нужный пакет, например `library: numpy`.
-
-3. **Установка зависимостей**  
-
-   ```bash
-   python -m pip install -r requirements.txt pyyaml pytest
-   ```
-
-4. **Создание/добавление тестов** в `tests/pytest/` или `tests/unittest/`.
-
-5. **Запуск**  
-
-   ```bash
-   python -m quickboiler run
-   ```
-
-   - При первом запуске `sitecustomize.py` проверит наличие `numpy`.  
-   - Если пакет отсутствует, автоматически выполнит `pip install numpy`.  
-   - После установки тесты продолжают выполняться.
-
-### 7️⃣ Расширения (по желанию)
-
-| Расширение | Что добавляет |
-|-----------|----------------|
-| **Docker‑support** | `quickboiler dockerize` → `Dockerfile` с `FROM python:3.12-slim`, копирует проект, `pip install -r requirements.txt`, затем `ENTRYPOINT ["python","-m","quickboiler","run"]`. |
-| **CI‑Hook** | `.github/workflows/quickboiler.yml` вызывает `quickboiler run` в CI‑pipeline. |
-| **Pre‑commit** | Скрипт, проверяющий, что `library` установлена перед каждым коммитом. |
-| **Multiple libraries** | В `quickboiler.cfg` добавить список `libraries: [requests==2.31.0, numpy]` и модифицировать `sitecustomize.py` для итерации. |
-
----  
-
-**Итого:**  
-* Быстрое развёртывание проекта (`quickboiler init`).  
-* Автоматическая установка недостающих зависимостей при первом импорте.  
-* Поддержка одновременно `pytest` и `unittest` с возможностью переключения через конфиг.  
-* Готов к дальнейшему расширению (Docker, CI, несколько зависимостей).
+В этот MVP не входят:
+- Docker и `dockerize`;
+- CI-интеграция;
+- поддержка нескольких библиотек в одном конфиге;
+- автогенерация `requirements.txt`.
