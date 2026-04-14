@@ -1,10 +1,8 @@
 import unittest
 
-class TestImport(unittest.TestCase):
-    def test_import(self):
-        import requests
-        self.assertEqual(requests.__name__, "requests")
 
-if __name__ == "__main__":
-    unittest.main()
+class TestPlaceholder(unittest.TestCase):
+    """Replace this placeholder with real tests for your target library."""
 
+    def test_placeholder(self):
+        self.assertTrue(True)
