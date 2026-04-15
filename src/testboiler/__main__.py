@@ -3,7 +3,7 @@ import os
 import shutil
 import subprocess
 import sys
-from importlib import resources
+import sysconfig
 from pathlib import Path
 
 
@@ -91,11 +91,23 @@ def load_config(config_path="quickboiler.cfg"):
     }
 
 
+def resolve_template_root():
+    repo_template = Path(__file__).resolve().parents[2] / "template"
+    installed_template = Path(sysconfig.get_path("data")) / "share" / "testboiler" / "template"
+    fallback_template = Path(sys.prefix) / "share" / "testboiler" / "template"
+
+    for candidate in (repo_template, installed_template, fallback_template):
+        if candidate.is_dir():
+            return candidate
+
+    raise SystemExit("Template directory was not found in this installation.")
+
+
 def copy_template(dst):
     if os.listdir(dst):
         raise SystemExit("`testboiler init` only works in an empty directory.")
 
-    template_root = resources.files("testboiler").joinpath("template")
+    template_root = resolve_template_root()
     for item in template_root.iterdir():
         target = os.path.join(dst, item.name)
         if item.is_dir():
@@ -259,6 +271,7 @@ def main():
         print("Virtual environment created in .venv\nActivate with:\n  source .venv/bin/activate")
     else:
         parser.print_help()
+
 
 if __name__ == "__main__":
     main()

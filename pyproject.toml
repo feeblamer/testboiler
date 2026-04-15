@@ -16,8 +16,19 @@ dependencies = [
 testboiler = "testboiler.__main__:main"
 
 [tool.setuptools]
-packages = ["testboiler"]
 include-package-data = true
+package-dir = {"" = "src"}
 
-[tool.setuptools.package-data]
-testboiler = ["template/**/*"]
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.data-files]
+"share/testboiler/template" = ["template/quickboiler.cfg", "template/requirements.txt"]
+"share/testboiler/template/tests/pytest" = [
+    "template/tests/pytest/test_1.py",
+    "template/tests/pytest/test_with_file.py",
+]
+"share/testboiler/template/tests/unittest" = [
+    "template/tests/unittest/test_1.py",
+    "template/tests/unittest/test_with_file.py",
+]
