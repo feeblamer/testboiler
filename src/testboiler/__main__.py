@@ -171,23 +171,6 @@ def _venv_python(venv_dir=".venv"):
     return str(venv_path / "bin" / "python")
 
 
-def _active_virtualenv_root():
-    virtual_env = os.environ.get("VIRTUAL_ENV")
-    if virtual_env:
-        return Path(virtual_env)
-
-    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
-        return Path(sys.prefix)
-
-    return None
-
-
-def _environment_python(env_root):
-    if os.name == "nt":
-        return str(Path(env_root) / "Scripts" / "python.exe")
-    return str(Path(env_root) / "bin" / "python")
-
-
 def resolve_project_environment():
     local_root = Path(".venv")
     local_python = _venv_python()
@@ -198,17 +181,6 @@ def resolve_project_environment():
             "python": local_python,
             "label": ".venv",
         }
-
-    active_root = _active_virtualenv_root()
-    if active_root:
-        active_python = _environment_python(active_root)
-        if os.path.exists(active_python):
-            return {
-                "kind": "active_virtualenv",
-                "root": str(active_root),
-                "python": active_python,
-                "label": "active virtual environment",
-            }
 
     return None
 
@@ -231,8 +203,8 @@ def require_project_environment():
     environment = resolve_project_environment()
     if environment is None:
         raise SystemExit(
-            "Project environment was not found. Run `testboiler install` first "
-            "or activate a virtual environment."
+            "Project environment `.venv` was not found. "
+            "Run `testboiler install` or `testboiler venv` first."
         )
     return environment
 
@@ -242,11 +214,10 @@ def _state_file_path(environment):
 
 
 def _environment_label(environment, definite=False):
+    del definite
     if environment["kind"] == "local_dot_venv":
         return ".venv"
-    if definite:
-        return "the active virtual environment"
-    return "active virtual environment"
+    return "project environment"
 
 
 def load_install_state(environment):
@@ -402,7 +373,7 @@ def main():
     )
     install_parser = sub.add_parser(
         "install",
-        help="Install project dependencies into the local .venv or the active virtual environment.",
+        help="Install project dependencies into the local .venv.",
     )
     install_parser.add_argument(
         "--force",
@@ -412,7 +383,7 @@ def main():
     sub.add_parser("run", help="Run enabled test suites from config.yml.")
     sub.add_parser(
         "venv",
-        help="Create a local .venv unless the project already uses an active virtual environment.",
+        help="Create a local .venv in the current project.",
     )
     args = parser.parse_args()
 
@@ -447,10 +418,10 @@ def main():
             run_unittest(environment_python)
     elif args.cmd == "venv":
         environment = resolve_project_environment()
-        if environment and environment["kind"] == "active_virtualenv":
-            print("Using the active virtual environment. A local .venv was not created.")
+        if environment:
+            print("Virtual environment already exists in .venv")
         else:
-            environment = ensure_project_environment()
+            ensure_project_environment()
             print(
                 "Virtual environment created in .venv\nActivate with:\n  source .venv/bin/activate"
             )
