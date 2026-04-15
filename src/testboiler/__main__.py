@@ -1,4 +1,6 @@
 import argparse
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -7,6 +9,9 @@ import sysconfig
 from pathlib import Path
 
 import yaml
+
+
+STATE_FILE_NAME = ".testboiler-install-state.json"
 
 
 def _normalize_scalar_none(value):
@@ -116,6 +121,30 @@ def resolve_template_root():
     raise SystemExit("Template directory was not found in this installation.")
 
 
+def _hash_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as file:
+        digest.update(file.read())
+    return digest.hexdigest()
+
+
+def _build_install_state(config, config_path="config.yml", requirements_path="requirements.txt"):
+    state = {
+        "version": 1,
+        "config_hash": _hash_file(config_path),
+        "requirements_hash": None,
+        "library_distribution": None,
+    }
+
+    if os.path.exists(requirements_path):
+        state["requirements_hash"] = _hash_file(requirements_path)
+
+    if config["library"]:
+        state["library_distribution"] = config["library"]["distribution"]
+
+    return state
+
+
 def copy_template(dst):
     if os.listdir(dst):
         raise SystemExit("`testboiler init` only works in an empty directory.")
@@ -136,6 +165,10 @@ def _venv_python(venv_dir=".venv"):
     return str(venv_path / "bin" / "python")
 
 
+def _state_file_path(venv_dir=".venv"):
+    return str(Path(venv_dir) / STATE_FILE_NAME)
+
+
 def ensure_project_venv(venv_dir=".venv"):
     python_path = _venv_python(venv_dir)
     if not os.path.exists(python_path):
@@ -148,6 +181,32 @@ def require_project_venv(venv_dir=".venv"):
     if not os.path.exists(python_path):
         raise SystemExit("Project .venv was not found. Run `testboiler install` first.")
     return python_path
+
+
+def load_install_state(venv_dir=".venv"):
+    state_path = _state_file_path(venv_dir)
+    if not os.path.exists(state_path):
+        return None
+
+    try:
+        with open(state_path, "r", encoding="utf-8") as file:
+            state = json.load(file)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(
+            "Project install state is invalid. Run `testboiler install`."
+        ) from exc
+
+    if not isinstance(state, dict):
+        raise SystemExit("Project install state is invalid. Run `testboiler install`.")
+
+    return state
+
+
+def write_install_state(state, venv_dir=".venv"):
+    state_path = _state_file_path(venv_dir)
+    with open(state_path, "w", encoding="utf-8") as file:
+        json.dump(state, file, indent=2, sort_keys=True)
+        file.write("\n")
 
 
 def run_pytest(python_executable):
@@ -203,6 +262,34 @@ def ensure_test_dependencies(config, python_executable):
     install_library(python_executable, config["library"])
 
 
+def is_install_state_current(config, venv_dir=".venv", config_path="config.yml", requirements_path="requirements.txt"):
+    stored_state = load_install_state(venv_dir)
+    if stored_state is None:
+        return False
+
+    current_state = _build_install_state(config, config_path, requirements_path)
+    return stored_state == current_state
+
+
+def require_fresh_install_state(config, venv_dir=".venv", config_path="config.yml", requirements_path="requirements.txt"):
+    state = load_install_state(venv_dir)
+    if state is None:
+        raise SystemExit("Project dependencies were not installed. Run `testboiler install`.")
+
+    current_state = _build_install_state(config, config_path, requirements_path)
+
+    if state.get("config_hash") != current_state["config_hash"]:
+        raise SystemExit("config.yml changed after the last install. Run `testboiler install`.")
+
+    if state.get("requirements_hash") != current_state["requirements_hash"]:
+        raise SystemExit(
+            "requirements.txt changed after the last install. Run `testboiler install`."
+        )
+
+    if state.get("library_distribution") != current_state["library_distribution"]:
+        raise SystemExit("Library configuration changed after the last install. Run `testboiler install`.")
+
+
 def ensure_runtime_requirements(config, python_executable):
     if config["pytest"]:
         try:
@@ -242,9 +329,14 @@ def main():
         nargs="?",
         help="Create this directory and initialize the template inside it.",
     )
-    sub.add_parser(
+    install_parser = sub.add_parser(
         "install",
         help="Install requirements.txt and config.yml library into the project .venv.",
+    )
+    install_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force reinstall dependencies even if config.yml and requirements.txt did not change.",
     )
     sub.add_parser("run", help="Run enabled test suites from config.yml.")
     sub.add_parser("venv", help="Create a local virtual environment in .venv.")
@@ -261,12 +353,18 @@ def main():
             copy_template(os.getcwd())
     elif args.cmd == "install":
         config = load_config()
-        venv_python = ensure_project_venv()
-        ensure_test_dependencies(config, venv_python)
-        print("Dependencies installed into .venv")
+        venv_dir = ".venv"
+        venv_python = ensure_project_venv(venv_dir)
+        if not args.force and is_install_state_current(config, venv_dir):
+            print("Dependencies are already installed in .venv")
+        else:
+            ensure_test_dependencies(config, venv_python)
+            write_install_state(_build_install_state(config), venv_dir)
+            print("Dependencies installed into .venv")
     elif args.cmd == "run":
         config = load_config()
         venv_python = require_project_venv()
+        require_fresh_install_state(config)
         ensure_runtime_requirements(config, venv_python)
         if config["pytest"]:
             run_pytest(venv_python)
