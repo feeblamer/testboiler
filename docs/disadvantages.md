@@ -2,18 +2,8 @@
 
 ## Ключевые недостатки
 
-### 1. Хрупкий разбор `quickboiler.cfg` без `PyYAML`
-- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:10)
-- Проблема: `_simple_parse_yaml()` поддерживает только очень узкий поднабор YAML и молча интерпретирует структуру по отступам и `key: value`.
-- Риск: любой более сложный, но валидный YAML будет разобран неверно. Например, строки с `:` внутри значения, списки, quoted values, вложенные структуры, комментарии после значений.
-- Следствие: конфиг может выглядеть валидным для пользователя, но CLI примет неверные решения.
-- Что улучшить:
-  - убрать самодельный парсер и сделать `PyYAML` обязательной runtime-зависимостью;
-  - при ошибке парсинга показывать понятное сообщение с путём к конфигу;
-  - добавить валидацию схемы конфига после загрузки.
-
-### 2. Ненадёжное определение импортируемого имени для пакета из `library`
-- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:138)
+### 1. Ненадёжное определение импортируемого имени для пакета из `library`
+- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:123)
 - Проблема: `_extract_import_name()` превращает requirement в import-name простым удалением версии и заменой `-` на `_`.
 - Риск: для многих реальных пакетов это неверно. `pip install beautifulsoup4` импортируется как `bs4`, `pip install pillow` импортируется как `PIL`, и проверка в `ensure_runtime_requirements()` даст ложную ошибку.
 - Следствие: `testboiler run` может требовать `testboiler install`, хотя пакет уже установлен, или наоборот вести себя непредсказуемо.
@@ -22,8 +12,8 @@
   - либо проверять наличие пакета через `python -m pip show <distribution>`, а не через `import`;
   - лучше поддержать оба сценария: `distribution_name` и `import_name`.
 
-### 3. `install` неидемпотентен и всегда запускает `pip install`
-- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:146), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:170), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:244)
+### 2. `install` неидемпотентен и всегда запускает `pip install`
+- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:131), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:155), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:229)
 - Проблема: при каждом вызове `testboiler install` заново запускаются установка `requirements.txt` и установка `library`.
 - Риск: это медленно, шумно и зависит от сети даже тогда, когда окружение уже подготовлено.
 - Следствие: пользователь будет избегать `install`, а `run` будет ломаться из-за устаревшего `.venv`.
@@ -32,8 +22,8 @@
   - если хеши не изменились, писать `Dependencies are already installed`;
   - добавить флаг `--force` для принудительной переустановки.
 
-### 4. Слабая валидация `quickboiler.cfg`
-- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:59)
+### 3. Слабая валидация `quickboiler.cfg`
+- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:34)
 - Проблема: конфиг проверяется только на наличие mapping и хотя бы одного `framework=true`. Плейсхолдер `library: <lib==2.0.1>` тихо превращается в `None`.
 - Риск: пользователь думает, что указал библиотеку, а установка фактически не выполняется.
 - Следствие: сложно понять, почему `install` не установил целевой пакет.
@@ -42,7 +32,7 @@
   - валидировать неизвестные ключи и типы значений;
   - печатать итоговую интерпретацию конфига в `install --verbose`.
 
-### 5. Слишком жёсткая привязка к Python 3.14
+### 4. Слишком жёсткая привязка к Python 3.14
 - Файл: [pyproject.toml](/home/avm/Code/testboiler/pyproject.toml:10)
 - Проблема: `requires-python = ">=3.14"`.
 - Риск: пакет нельзя поставить в большинстве актуальных окружений, включая многие `pipx`/CI/рабочие машины, где ещё 3.11-3.13.
@@ -51,7 +41,7 @@
   - понизить требование до фактически используемого минимума, вероятно `>=3.10` или `>=3.11`;
   - подтвердить это тестами в нескольких версиях Python.
 
-### 6. Шаблон `requirements.txt` не покрывает оба режима запуска
+### 5. Шаблон `requirements.txt` не покрывает оба режима запуска
 - Файл: [template/requirements.txt](/home/avm/Code/testboiler/template/requirements.txt:1)
 - Проблема: шаблон содержит `pytest` и `pyyaml`, но не объясняет, зачем там `pyyaml`, и не различает обязательные и пользовательские зависимости.
 - Риск: пользователь начинает редактировать файл вслепую и смешивает туда инструменты тестирования, библиотеку под тестом и вспомогательные пакеты.
@@ -63,8 +53,8 @@
     - целевую библиотеку лучше оставлять только в `quickboiler.cfg`;
   - либо генерировать `requirements.txt` пустым и добавлять `pytest` только если включён `framework.pytest`.
 
-### 7. `run` валидирует только `pytest` и `library`, но не все реальные условия запуска
-- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:187)
+### 6. `run` валидирует только `pytest` и `library`, но не все реальные условия запуска
+- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:172)
 - Проблема: перед запуском проверяется наличие `pytest` и импортируемость `library`, но не проверяется, например, наличие самих каталогов `tests/pytest` или `tests/unittest`.
 - Риск: пользователь получает stack trace из subprocess вместо предсказуемой ошибки уровня CLI.
 - Следствие: UX деградирует на частично изменённом или вручную отредактированном шаблоне.
@@ -73,8 +63,8 @@
   - если каталогов нет, печатать ошибку вида `tests/pytest was not found`;
   - аналогично проверить, что `.venv` содержит `pip`, если ожидается `install`.
 
-### 8. `init` слишком строг к целевой директории
-- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:94), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:235)
+### 7. `init` слишком строг к целевой директории
+- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:79), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:220)
 - Проблема: `init` разрешён только в полностью пустую папку, а `init <dir>` запрещён, если директория уже существует вообще.
 - Риск: это неудобно для реальных сценариев, где каталог уже создан IDE, содержит `.gitkeep`, `.git`, `.python-version` или `.gitignore`.
 - Следствие: команда выглядит хрупкой и “ломается на мелочах”.
@@ -83,8 +73,8 @@
   - как минимум игнорировать `.git`, `.gitignore`, `.python-version`, `.venv`;
   - либо добавить флаг `--force` или `--merge-template`.
 
-### 9. Плохой сценарий для работы из уже созданного виртуального окружения
-- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:94), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:114), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:257)
+### 8. Плохой сценарий для работы из уже созданного виртуального окружения
+- Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:79), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:99), [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:242)
 - Проблема: если пользователь сначала создаёт проектную папку и виртуальное окружение, а потом хочет развернуть туда шаблон, `init` блокирует этот сценарий, потому что директория уже не пустая. Если же пользователь создаёт вложенную папку `testboiler`, то инструмент затем создаёт ещё один `.venv` уже внутри шаблона.
 - Риск: получается два конкурирующих виртуальных окружения и неочевидный workflow.
 - Следствие: сценарий “сначала создать venv, потом развернуть boilerplate” сейчас фактически не поддержан.
@@ -95,7 +85,7 @@
     - или создать локальный `.venv` проекта;
   - как минимум добавить флаг, например `--use-existing-venv`, чтобы не создавать вложенное окружение повторно.
 
-### 10. Нет separation of concerns внутри `__main__.py`
+### 9. Нет separation of concerns внутри `__main__.py`
 - Файл: [src/testboiler/__main__.py](/home/avm/Code/testboiler/src/testboiler/__main__.py:1)
 - Проблема: в одном файле смешаны парсинг конфига, операции с шаблоном, управление `.venv`, установка зависимостей, проверки окружения и CLI.
 - Риск: файл быстро станет трудно расширять, особенно если появятся lock-файлы, import-name mapping, несколько библиотек, доп. команды.
@@ -108,7 +98,7 @@
     - `cli.py`
   - оставить в `__main__.py` только wiring команд.
 
-### 11. Практически нет автоматических тестов самого CLI
+### 10. Практически нет автоматических тестов самого CLI
 - Файлы: [tests/pytest/test_1.py](/home/avm/Code/testboiler/tests/pytest/test_1.py:1), [tests/unittest/test_1.py](/home/avm/Code/testboiler/tests/unittest/test_1.py:1)
 - Проблема: текущие тесты — заглушки. Они не проверяют ни `init`, ни `install`, ни `run`, ни разбор конфига.
 - Риск: регрессии в CLI уже были и будут появляться незаметно.
@@ -123,7 +113,7 @@
     - `run` без `pytest`;
     - `load_config()` на валидных и невалидных конфигах.
 
-### 12. Примеры в `examples/` могут разойтись с шаблоном
+### 11. Примеры в `examples/` могут разойтись с шаблоном
 - Каталоги: [examples](/home/avm/Code/testboiler/examples:1), [template](/home/avm/Code/testboiler/template:1)
 - Проблема: после нормализации структуры шаблон и примеры больше не смешаны, но теперь появляется другой риск — sample projects в `examples/` могут со временем перестать соответствовать актуальному шаблону и поведению CLI.
 - Риск: пользователь увидит рабочий пример, который ведёт себя иначе, чем свежесозданный проект через `testboiler init`.
@@ -193,10 +183,9 @@ framework:
 ## Приоритетный план улучшений
 
 ### Высокий приоритет
-1. Сделать `PyYAML` обязательным и удалить `_simple_parse_yaml()`.
-2. Исправить модель `library` на `distribution + import_name`.
-3. Добавить тесты на CLI и конфиг.
-4. Ослабить `requires-python` до реально необходимой версии.
+1. Исправить модель `library` на `distribution + import_name`.
+2. Добавить тесты на CLI и конфиг.
+3. Ослабить `requires-python` до реально необходимой версии.
 
 ### Средний приоритет
 1. Добавить lock/state-механику для `install`.

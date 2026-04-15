@@ -6,37 +6,7 @@ import sys
 import sysconfig
 from pathlib import Path
 
-
-def _simple_parse_yaml(text):
-    config = {}
-    current_section = None
-
-    for raw_line in text.splitlines():
-        if not raw_line.strip() or raw_line.lstrip().startswith("#"):
-            continue
-
-        indent = len(raw_line) - len(raw_line.lstrip(" "))
-        key, _, value = raw_line.strip().partition(":")
-        value = value.strip()
-
-        if indent == 0:
-            current_section = None
-            if value == "":
-                config[key] = {}
-                current_section = key
-            else:
-                config[key] = value
-        elif current_section:
-            lowered = value.lower()
-            if lowered == "true":
-                parsed_value = True
-            elif lowered == "false":
-                parsed_value = False
-            else:
-                parsed_value = value
-            config[current_section][key] = parsed_value
-
-    return config
+import yaml
 
 
 def _normalize_library_value(value):
@@ -60,24 +30,26 @@ def load_config(config_path="quickboiler.cfg"):
     if not os.path.exists(config_path):
         raise SystemExit(f"Configuration file not found: {config_path}")
 
-    with open(config_path, "r", encoding="utf-8") as file:
-        content = file.read()
-
     try:
-        import yaml
-    except ImportError:
-        config = _simple_parse_yaml(content)
-    else:
-        loaded = yaml.safe_load(content)
-        config = loaded if isinstance(loaded, dict) else {}
+        with open(config_path, "r", encoding="utf-8") as file:
+            loaded = yaml.safe_load(file)
+    except yaml.YAMLError as exc:
+        raise SystemExit(f"Invalid YAML in configuration file: {config_path}") from exc
+    except OSError as exc:
+        raise SystemExit(f"Failed to read configuration file: {config_path}") from exc
+
+    if loaded is None:
+        raise SystemExit(f"Configuration file is empty: {config_path}")
+
+    config = loaded
 
     if not isinstance(config, dict):
-        raise SystemExit("Configuration file must contain a YAML mapping.")
+        raise SystemExit(f"Configuration file must contain a YAML mapping: {config_path}")
 
     library = _normalize_library_value(config.get("library"))
     framework = config.get("framework") or {}
     if not isinstance(framework, dict):
-        raise SystemExit("`framework` in quickboiler.cfg must be a mapping.")
+        raise SystemExit(f"`framework` in {config_path} must be a mapping.")
 
     pytest_enabled = bool(framework.get("pytest", False))
     unittest_enabled = bool(framework.get("unittest", False))
