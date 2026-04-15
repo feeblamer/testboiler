@@ -1,5 +1,5 @@
 # Этот пример использует только встроенные модули Python.
-library: None
+library: null
 
 framework:
   pytest: true

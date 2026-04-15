@@ -6,7 +6,7 @@
 
 В текущем MVP есть:
 - шаблон проекта с `pytest` и `unittest`;
-- конфиг `quickboiler.cfg`;
+- конфиг `config.yml`;
 - локальный `.venv` для запуска тестов;
 - CLI-команды `init`, `install`, `run`, `venv`.
 
@@ -27,18 +27,18 @@ my_project/
 │  └─ unittest/
 │      └─ test_1.py
 ├─ requirements.txt
-└─ quickboiler.cfg
+└─ config.yml
 ```
 
 Шаблонные тесты не содержат кода под конкретную библиотеку. Это заготовки, в которые пользователь добавляет свои проверки.
 Источник этого шаблона в репозитории: `template/`.
 
-### 3. Конфиг `quickboiler.cfg`
+### 3. Конфиг `config.yml`
 
 ```yaml
-# Укажите библиотеку, которую хотите тестировать.
-# Это шаблон: замените значение ниже на реальный пакет.
-library: <lib==2.0.1>
+library:
+  distribution: requests==2.32.0
+  import_name: requests
 
 framework:
   pytest: true
@@ -46,8 +46,8 @@ framework:
 ```
 
 Правила:
-- `library` можно задать как реальный пакет или как `None`, если тестируются только встроенные модули Python;
-- если указан реальный пакет, он устанавливается в локальный `.venv` проекта;
+- `library` можно задать как mapping с `distribution` и `import_name` или как `null`, если тестируются только встроенные модули Python;
+- если указан реальный пакет, `distribution` используется для установки в локальный `.venv`, а `import_name` — для проверки импорта;
 - если `pytest: true`, запускается `pytest tests/pytest`;
 - если `unittest: true`, запускается `python -m unittest discover -s tests/unittest`;
 - хотя бы один раннер должен быть включён.
@@ -59,7 +59,7 @@ framework:
 Команда `testboiler install`:
 - создаёт `.venv`, если его ещё нет;
 - устанавливает зависимости из `requirements.txt` именно в `.venv`;
-- устанавливает зависимость из `quickboiler.cfg` тоже в `.venv`, если `library` задана.
+- устанавливает зависимость из `config.yml` тоже в `.venv`, если `library` задана.
 
 Команда `testboiler run`:
 - использует уже существующий `.venv`;
@@ -74,7 +74,7 @@ framework:
 
 - `testboiler init` — копирует шаблон в текущий пустой каталог;
 - `testboiler init <dir>` — создаёт новую папку и разворачивает шаблон в ней;
-- `testboiler install` — создаёт/использует локальный `.venv` и ставит туда зависимости из `requirements.txt` и `quickboiler.cfg`;
+- `testboiler install` — создаёт/использует локальный `.venv` и ставит туда зависимости из `requirements.txt` и `config.yml`;
 - `testboiler run` — использует локальный `.venv` и запускает только те тестовые наборы, которые включены в конфиге;
 - `testboiler venv` — создаёт `.venv`.
 
@@ -93,7 +93,7 @@ cd my_project
 ```
 
 Дальше:
-1. Открыть `quickboiler.cfg` и указать реальную библиотеку.
+1. Открыть `config.yml` и указать реальную библиотеку.
 2. Указать нужные зависимости в `requirements.txt`.
 
 ```bash
@@ -121,6 +121,7 @@ testboiler run
 В каталоге `examples/` лежат готовые примеры проектов.
 
 Текущий пример:
-- `examples/builtin_stdlib/` — проект для встроенных модулей Python с `library: None`.
+- `examples/builtin_stdlib/` — проект для встроенных модулей Python с `library: null`.
+ - `examples/builtin_stdlib/` — проект для встроенных модулей Python с `library: null`.
 
 Примеры не создают собственный `.venv` и рассчитаны на использование корневого виртуального окружения репозитория.

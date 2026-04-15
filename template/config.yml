@@ -1,0 +1,10 @@
+# Укажите библиотеку, которую хотите тестировать.
+# Можно указать null, если тестируете только встроенные модули Python.
+library:
+  distribution: requests==2.32.0
+  import_name: requests
+
+# Какие наборы тестов включать (можно выключить один из блоков)
+framework:
+  pytest: true
+  unittest: true

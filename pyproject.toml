@@ -23,7 +23,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.data-files]
-"share/testboiler/template" = ["template/quickboiler.cfg", "template/requirements.txt"]
+"share/testboiler/template" = ["template/config.yml", "template/requirements.txt"]
 "share/testboiler/template/tests/pytest" = [
     "template/tests/pytest/test_1.py",
     "template/tests/pytest/test_with_file.py",
