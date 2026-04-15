@@ -146,8 +146,14 @@ def _build_install_state(config, config_path="config.yml", requirements_path="re
 
 
 def copy_template(dst):
-    if os.listdir(dst):
-        raise SystemExit("`testboiler init` only works in an empty directory.")
+    allowed_entries = {".venv"}
+    entries = {entry.name for entry in Path(dst).iterdir()}
+    unexpected_entries = entries - allowed_entries
+    if unexpected_entries:
+        raise SystemExit(
+            "`testboiler init` only works in an empty directory or in a directory "
+            "that only contains `.venv`."
+        )
 
     template_root = resolve_template_root()
     for item in template_root.iterdir():
@@ -165,26 +171,86 @@ def _venv_python(venv_dir=".venv"):
     return str(venv_path / "bin" / "python")
 
 
-def _state_file_path(venv_dir=".venv"):
-    return str(Path(venv_dir) / STATE_FILE_NAME)
+def _active_virtualenv_root():
+    virtual_env = os.environ.get("VIRTUAL_ENV")
+    if virtual_env:
+        return Path(virtual_env)
+
+    if sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        return Path(sys.prefix)
+
+    return None
 
 
-def ensure_project_venv(venv_dir=".venv"):
-    python_path = _venv_python(venv_dir)
-    if not os.path.exists(python_path):
-        subprocess.check_call([sys.executable, "-m", "venv", venv_dir])
-    return python_path
+def _environment_python(env_root):
+    if os.name == "nt":
+        return str(Path(env_root) / "Scripts" / "python.exe")
+    return str(Path(env_root) / "bin" / "python")
 
 
-def require_project_venv(venv_dir=".venv"):
-    python_path = _venv_python(venv_dir)
-    if not os.path.exists(python_path):
-        raise SystemExit("Project .venv was not found. Run `testboiler install` first.")
-    return python_path
+def resolve_project_environment():
+    local_root = Path(".venv")
+    local_python = _venv_python()
+    if os.path.exists(local_python):
+        return {
+            "kind": "local_dot_venv",
+            "root": str(local_root),
+            "python": local_python,
+            "label": ".venv",
+        }
+
+    active_root = _active_virtualenv_root()
+    if active_root:
+        active_python = _environment_python(active_root)
+        if os.path.exists(active_python):
+            return {
+                "kind": "active_virtualenv",
+                "root": str(active_root),
+                "python": active_python,
+                "label": "active virtual environment",
+            }
+
+    return None
 
 
-def load_install_state(venv_dir=".venv"):
-    state_path = _state_file_path(venv_dir)
+def ensure_project_environment():
+    environment = resolve_project_environment()
+    if environment:
+        return environment
+
+    subprocess.check_call([sys.executable, "-m", "venv", ".venv"])
+    return {
+        "kind": "local_dot_venv",
+        "root": ".venv",
+        "python": _venv_python(),
+        "label": ".venv",
+    }
+
+
+def require_project_environment():
+    environment = resolve_project_environment()
+    if environment is None:
+        raise SystemExit(
+            "Project environment was not found. Run `testboiler install` first "
+            "or activate a virtual environment."
+        )
+    return environment
+
+
+def _state_file_path(environment):
+    return str(Path(environment["root"]) / STATE_FILE_NAME)
+
+
+def _environment_label(environment, definite=False):
+    if environment["kind"] == "local_dot_venv":
+        return ".venv"
+    if definite:
+        return "the active virtual environment"
+    return "active virtual environment"
+
+
+def load_install_state(environment):
+    state_path = _state_file_path(environment)
     if not os.path.exists(state_path):
         return None
 
@@ -202,8 +268,8 @@ def load_install_state(venv_dir=".venv"):
     return state
 
 
-def write_install_state(state, venv_dir=".venv"):
-    state_path = _state_file_path(venv_dir)
+def write_install_state(state, environment):
+    state_path = _state_file_path(environment)
     with open(state_path, "w", encoding="utf-8") as file:
         json.dump(state, file, indent=2, sort_keys=True)
         file.write("\n")
@@ -238,12 +304,10 @@ def install_requirements(python_executable, requirements_path="requirements.txt"
             [python_executable, "-m", "pip", "install", "-r", requirements_path]
         )
     except subprocess.CalledProcessError as exc:
-        raise SystemExit(
-            "Failed to install dependencies into the project .venv from requirements.txt."
-        ) from exc
+        raise SystemExit("Failed to install dependencies from requirements.txt.") from exc
 
 
-def install_library(python_executable, library):
+def install_library(python_executable, library, environment):
     if not library:
         return
 
@@ -253,17 +317,18 @@ def install_library(python_executable, library):
         )
     except subprocess.CalledProcessError as exc:
         raise SystemExit(
-            f"Failed to install library `{library['distribution']}` into the project .venv."
+            f"Failed to install library `{library['distribution']}` into "
+            f"{_environment_label(environment, definite=True)}."
         ) from exc
 
 
-def ensure_test_dependencies(config, python_executable):
+def ensure_test_dependencies(config, python_executable, environment):
     install_requirements(python_executable)
-    install_library(python_executable, config["library"])
+    install_library(python_executable, config["library"], environment)
 
 
-def is_install_state_current(config, venv_dir=".venv", config_path="config.yml", requirements_path="requirements.txt"):
-    stored_state = load_install_state(venv_dir)
+def is_install_state_current(config, environment, config_path="config.yml", requirements_path="requirements.txt"):
+    stored_state = load_install_state(environment)
     if stored_state is None:
         return False
 
@@ -271,10 +336,13 @@ def is_install_state_current(config, venv_dir=".venv", config_path="config.yml",
     return stored_state == current_state
 
 
-def require_fresh_install_state(config, venv_dir=".venv", config_path="config.yml", requirements_path="requirements.txt"):
-    state = load_install_state(venv_dir)
+def require_fresh_install_state(config, environment, config_path="config.yml", requirements_path="requirements.txt"):
+    state = load_install_state(environment)
     if state is None:
-        raise SystemExit("Project dependencies were not installed. Run `testboiler install`.")
+        raise SystemExit(
+            "Project environment dependencies were not installed. "
+            "Run `testboiler install`."
+        )
 
     current_state = _build_install_state(config, config_path, requirements_path)
 
@@ -290,7 +358,8 @@ def require_fresh_install_state(config, venv_dir=".venv", config_path="config.ym
         raise SystemExit("Library configuration changed after the last install. Run `testboiler install`.")
 
 
-def ensure_runtime_requirements(config, python_executable):
+def ensure_runtime_requirements(config, environment):
+    python_executable = environment["python"]
     if config["pytest"]:
         try:
             subprocess.check_call(
@@ -300,7 +369,8 @@ def ensure_runtime_requirements(config, python_executable):
             )
         except subprocess.CalledProcessError as exc:
             raise SystemExit(
-                "pytest is not installed in project .venv. Run `testboiler install`."
+                f"pytest is not installed in {_environment_label(environment, definite=True)}. "
+                "Run `testboiler install`."
             ) from exc
 
     if config["library"]:
@@ -312,7 +382,8 @@ def ensure_runtime_requirements(config, python_executable):
             )
         except subprocess.CalledProcessError as exc:
             raise SystemExit(
-                f"Library `{config['library']['distribution']}` is not installed in project .venv. "
+                f"Library `{config['library']['distribution']}` is not installed in "
+                f"{_environment_label(environment, definite=True)}. "
                 "Run `testboiler install`."
             ) from exc
 
@@ -331,7 +402,7 @@ def main():
     )
     install_parser = sub.add_parser(
         "install",
-        help="Install requirements.txt and config.yml library into the project .venv.",
+        help="Install project dependencies into the local .venv or the active virtual environment.",
     )
     install_parser.add_argument(
         "--force",
@@ -339,7 +410,10 @@ def main():
         help="Force reinstall dependencies even if config.yml and requirements.txt did not change.",
     )
     sub.add_parser("run", help="Run enabled test suites from config.yml.")
-    sub.add_parser("venv", help="Create a local virtual environment in .venv.")
+    sub.add_parser(
+        "venv",
+        help="Create a local .venv unless the project already uses an active virtual environment.",
+    )
     args = parser.parse_args()
 
     if args.cmd == "init":
@@ -353,26 +427,33 @@ def main():
             copy_template(os.getcwd())
     elif args.cmd == "install":
         config = load_config()
-        venv_dir = ".venv"
-        venv_python = ensure_project_venv(venv_dir)
-        if not args.force and is_install_state_current(config, venv_dir):
-            print("Dependencies are already installed in .venv")
+        environment = ensure_project_environment()
+        environment_python = environment["python"]
+        if not args.force and is_install_state_current(config, environment):
+            print(f"Dependencies are already installed in {environment['label']}")
         else:
-            ensure_test_dependencies(config, venv_python)
-            write_install_state(_build_install_state(config), venv_dir)
-            print("Dependencies installed into .venv")
+            ensure_test_dependencies(config, environment_python, environment)
+            write_install_state(_build_install_state(config), environment)
+            print(f"Dependencies installed into {environment['label']}")
     elif args.cmd == "run":
         config = load_config()
-        venv_python = require_project_venv()
-        require_fresh_install_state(config)
-        ensure_runtime_requirements(config, venv_python)
+        environment = require_project_environment()
+        require_fresh_install_state(config, environment)
+        ensure_runtime_requirements(config, environment)
+        environment_python = environment["python"]
         if config["pytest"]:
-            run_pytest(venv_python)
+            run_pytest(environment_python)
         if config["unittest"]:
-            run_unittest(venv_python)
+            run_unittest(environment_python)
     elif args.cmd == "venv":
-        ensure_project_venv()
-        print("Virtual environment created in .venv\nActivate with:\n  source .venv/bin/activate")
+        environment = resolve_project_environment()
+        if environment and environment["kind"] == "active_virtualenv":
+            print("Using the active virtual environment. A local .venv was not created.")
+        else:
+            environment = ensure_project_environment()
+            print(
+                "Virtual environment created in .venv\nActivate with:\n  source .venv/bin/activate"
+            )
     else:
         parser.print_help()
 
